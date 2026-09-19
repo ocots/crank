@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "crank"
+version = "0.1.0"
+description = "Orchestration d'agents autonomes — le sélecteur est déterministe, seule l'exécution est un agent"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
+[project.scripts]
+crank = "crank.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crank"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/crank/templates" = "crank/templates"

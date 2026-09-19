@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+.venv/
+venv/
+
+# Système et éditeurs
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Config et suivis produits par `crank init` quand on teste l'outil sur lui-même.
+# Le dépôt de crank n'est pas piloté par crank : ces fichiers seraient du bruit.
+/.crank.toml
+/.crank/
+/decisions/
