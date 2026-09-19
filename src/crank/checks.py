@@ -144,3 +144,19 @@ def run_command(name: str, command: str, cwd: Path) -> CheckResult:
         return CheckResult(name, True)
     tail = (proc.stdout + proc.stderr).strip().splitlines()[-6:]
     return CheckResult(name, False, "\n    " + "\n    ".join(tail))
+
+
+def finalize_gate(
+    hard: list[CheckResult], soft: list[CheckResult], draft: bool
+) -> tuple[bool, bool]:
+    """Décide si `finalize` doit refuser — extrait pour être testable sans parler à
+    git ni à `gh`, ce que le reste de `finalize` doit faire.
+
+    Retourne `(bloque, critere_manquant)`. L'hygiène du diff (`hard` : périmètre,
+    taille, docstrings) bloque toujours. Le critère `done` et les vérifications
+    personnalisées (`soft`) ne bloquent qu'en dehors de `--draft` — sans ça, `--draft`
+    ne pourrait jamais montrer un travail précisément incomplet, ce qui est son but.
+    """
+    failed_soft = any(not r.ok for r in soft)
+    bloque = any(not r.ok for r in hard) or (failed_soft and not draft)
+    return bloque, failed_soft

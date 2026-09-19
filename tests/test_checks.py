@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from crank.checks import logic_unchanged, path_allowed
+from crank.checks import CheckResult, finalize_gate, logic_unchanged, path_allowed
+
+OK = CheckResult("x", True)
+KO = CheckResult("x", False, "raison")
 
 BASE = '''
 def f(x):
@@ -60,3 +63,24 @@ class TestLogicUnchanged:
 
     def test_syntaxe_invalide_refusee(self):
         assert not logic_unchanged(BASE, "def f(:\n")
+
+
+class TestFinalizeGate:
+    """`--draft` doit pouvoir montrer un travail précisément incomplet — sans ça,
+    l'option promise par le message d'erreur de `finalize` n'a aucun effet."""
+
+    def test_tout_passe(self):
+        assert finalize_gate([OK], [OK], draft=False) == (False, False)
+
+    def test_hygiene_du_diff_bloque_meme_en_draft(self):
+        """Un périmètre ou une taille hors limite n'est jamais négociable."""
+        assert finalize_gate([KO], [OK], draft=True) == (True, False)
+
+    def test_critere_manquant_bloque_hors_draft(self):
+        assert finalize_gate([OK], [KO], draft=False) == (True, True)
+
+    def test_critere_manquant_nempeche_pas_le_brouillon(self):
+        assert finalize_gate([OK], [KO], draft=True) == (False, True)
+
+    def test_les_deux_en_echec_bloquent_meme_en_draft(self):
+        assert finalize_gate([KO], [KO], draft=True) == (True, True)

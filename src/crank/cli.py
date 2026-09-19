@@ -201,30 +201,47 @@ def finalize(dry_run: bool, draft: bool) -> None:
     base = f"origin/{config.main_branch}"
     git_ops.run(["git", "fetch", "origin", config.main_branch], cwd, check=False)
 
-    results = [
+    # Hygiène du diff — jamais négociable, même en --draft : un brouillon reste une PR,
+    # pas une excuse pour un diff hors périmètre ou irrelisable.
+    hard = [
         checks.check_scope(cwd, base, role),
         checks.check_size(cwd, base, config.max_diff_lines),
         checks.check_docstrings_only(cwd, base, role),
-        checks.run_command("critère « done »", task.spec.done, cwd),
     ]
+    # Complétude fonctionnelle — bloquante normalement, mais c'est précisément ce
+    # qu'un --draft sert à montrer incomplet : « voici où j'en suis, voici ce qui
+    # bloque ». La rendre bloquante aussi en --draft rendrait l'option inutilisable.
+    soft = [checks.run_command("critère « done »", task.spec.done, cwd)]
     for name, command in config.checks.items():
-        results.append(checks.run_command(name, command, cwd))
+        soft.append(checks.run_command(name, command, cwd))
 
     click.echo(click.style("Vérifications", bold=True))
-    for r in results:
+    for r in [*hard, *soft]:
         click.echo("  " + r.line())
 
-    failed = [r for r in results if not r.ok]
-    if failed:
+    bloque, critere_manquant = checks.finalize_gate(hard, soft, draft)
+    if bloque:
+        n = len([r for r in [*hard, *soft] if not r.ok])
         click.echo()
         raise click.ClickException(
-            f"{len(failed)} vérification(s) en échec — aucune PR ouverte. "
+            f"{n} vérification(s) en échec — aucune PR ouverte. "
             "Corrige, ou déclare-toi bloqué avec --draft."
         )
+    if critere_manquant:
+        click.echo()
+        click.echo(click.style(
+            "⚠ critère non atteint, PR ouverte en brouillon quand même (--draft)", fg="yellow"
+        ))
 
     if dry_run:
         click.echo()
-        click.echo(click.style("✓ tout passe (dry-run, PR non ouverte)", fg="green"))
+        if critere_manquant:
+            click.echo(click.style(
+                "✓ hygiène du diff ok, critère non atteint — ouvrirait en brouillon "
+                "(dry-run, PR non ouverte)", fg="yellow"
+            ))
+        else:
+            click.echo(click.style("✓ tout passe (dry-run, PR non ouverte)", fg="green"))
         return
 
     if git_ops.is_dirty(cwd):
