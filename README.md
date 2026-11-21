@@ -83,6 +83,8 @@ Ce ne sont pas des consignes dans un prompt : ce sont des vérifications qui ref
 - **`max_diff_lines`** — une PR relisible, ou pas de PR. Il porte sur ce qui se relit :
   les fichiers générés déclarés dans `size_exclude` (lockfiles, suivi de la tâche) ne
   comptent pas, mais restent affichés, et soumis au périmètre comme aux données sensibles.
+  Avec **`deletion_weight`** (entre 0 et 1, 1 par défaut), une ligne supprimée compte pour
+  ce poids : retirer du code se relit plus vite qu'en écrire.
 - **périmètre par rôle** — le diff doit rester dans les chemins déclarés. En particulier,
   le rôle `test` **ne peut pas toucher au code de production** : sans ça, un agent « fait
   passer le test » en modifiant le code testé.

@@ -61,6 +61,7 @@ class Config:
     wip_max: int = 4
     max_diff_lines: int = 300
     size_exclude: tuple[str, ...] = ()
+    deletion_weight: float = 1.0
     main_branch: str = "main"
     decisions_dir: str = "decisions"
     worktree_root: str = ".."
@@ -74,6 +75,12 @@ class Config:
     def tier_of(self, role_name: str) -> Tier | None:
         role = self.roles.get(role_name)
         return role.tier if role else None
+
+
+def _weight(raw: object) -> float:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not 0 <= raw <= 1:
+        raise ValueError(f"deletion_weight : un nombre entre 0 et 1 attendu, pas « {raw} »")
+    return float(raw)
 
 
 def _parse_roles(raw: dict) -> dict[str, Role]:
@@ -125,6 +132,7 @@ def load_config(root: Path) -> Config:
         wip_max=int(section.get("wip_max", 4)),
         max_diff_lines=int(section.get("max_diff_lines", 300)),
         size_exclude=tuple(section.get("size_exclude", ())),
+        deletion_weight=_weight(section.get("deletion_weight", 1)),
         main_branch=str(section.get("main_branch", "main")),
         decisions_dir=str(section.get("decisions_dir", "decisions")),
         worktree_root=str(section.get("worktree_root", "..")),
