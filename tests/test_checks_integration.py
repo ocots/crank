@@ -284,3 +284,20 @@ class TestPoidsDesSuppressions:
     def test_le_poids_passe_par_diff_hygiene(self, nettoyage):
         hard = diff_hygiene(nettoyage, "base", FEATURE, 300, SensitiveRules(), (), 0.5)
         assert all(r.ok for r in hard)
+
+
+class TestFichierPasEnUtf8:
+    """Un export bancaire en Windows-1252 ne fait pas planter les vérifications."""
+
+    @pytest.fixture
+    def windows_1252(self, repo):
+        (repo / "src" / "releve.txt").write_bytes(f"Intérêts\nIBAN {IBAN}\n".encode("cp1252"))
+        commit(repo, "cp1252")
+        return repo
+
+    def test_taille(self, windows_1252):
+        assert check_size(windows_1252, "base", 300).ok
+
+    def test_iban_toujours_detecte(self, windows_1252):
+        result = check_sensitive(windows_1252, "base", RULES)
+        assert not result.ok and "src/releve.txt:2 (IBAN)" in result.detail

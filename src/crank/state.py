@@ -33,7 +33,7 @@ class StateError(RuntimeError):
 def _run_json(args: list[str], cwd: Path) -> list | dict:
     try:
         out = subprocess.run(
-            args, cwd=cwd, capture_output=True, text=True, check=True, timeout=60
+            args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True, timeout=60
         ).stdout
     except FileNotFoundError as exc:
         raise StateError("`gh` introuvable — installe GitHub CLI et authentifie-toi") from exc
