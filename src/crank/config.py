@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +19,29 @@ class Role:
     paths: tuple[str, ...]
     docstrings_only: bool = False
     brief: str = ""
+
+
+@dataclass(frozen=True)
+class SensitivePattern:
+    name: str
+    regex: str
+
+
+@dataclass(frozen=True)
+class SensitiveRules:
+    """Ce qui ne doit jamais entrer dans le dépôt : données personnelles, secrets.
+
+    `allowed_paths` désigne les zones où les données fictives sont permises (fixtures de
+    test) : elles échappent aux deux contrôles, chemins et motifs.
+    """
+
+    forbidden_paths: tuple[str, ...] = ()
+    allowed_paths: tuple[str, ...] = ()
+    patterns: tuple[SensitivePattern, ...] = ()
+
+    @property
+    def declared(self) -> bool:
+        return bool(self.forbidden_paths or self.patterns)
 
 
 DEFAULT_ROLES: dict[str, Role] = {
@@ -41,6 +65,7 @@ class Config:
     worktree_root: str = ".."
     roles: dict[str, Role] = field(default_factory=lambda: dict(DEFAULT_ROLES))
     checks: dict[str, str] = field(default_factory=dict)
+    sensitive: SensitiveRules = field(default_factory=SensitiveRules)
 
     def role(self, name: str) -> Role | None:
         return self.roles.get(name)
@@ -70,6 +95,24 @@ def _parse_roles(raw: dict) -> dict[str, Role]:
     return roles
 
 
+def _parse_sensitive(raw: dict) -> SensitiveRules:
+    patterns: list[SensitivePattern] = []
+    for i, body in enumerate(raw.get("patterns", ())):
+        if not isinstance(body, dict) or not body.get("name") or not body.get("regex"):
+            raise ValueError(f"[sensitive] motif n°{i + 1} : `name` et `regex` attendus")
+        name, regex = str(body["name"]), str(body["regex"])
+        try:
+            re.compile(regex)
+        except re.error as exc:
+            raise ValueError(f"[sensitive] motif « {name} » : regex invalide ({exc})") from exc
+        patterns.append(SensitivePattern(name, regex))
+    return SensitiveRules(
+        forbidden_paths=tuple(raw.get("forbidden_paths", ())),
+        allowed_paths=tuple(raw.get("allowed_paths", ())),
+        patterns=tuple(patterns),
+    )
+
+
 def load_config(root: Path) -> Config:
     path = root / CONFIG_NAME
     if not path.is_file():
@@ -85,4 +128,5 @@ def load_config(root: Path) -> Config:
         worktree_root=str(section.get("worktree_root", "..")),
         roles=roles,
         checks=dict(raw.get("checks", {})),
+        sensitive=_parse_sensitive(raw.get("sensitive", {})),
     )

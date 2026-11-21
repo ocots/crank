@@ -53,8 +53,9 @@ ton rôle. **Travaille dans le worktree**, jamais dans le dépôt principal.
 crank finalize
 ```
 
-Lance les vérifications (périmètre, taille, critère `done`, contrôles du projet) puis ouvre
-la PR. **Si une vérification échoue, aucune PR n'est ouverte** : corrige et relance.
+Lance les vérifications (périmètre, taille, données sensibles, critère `done`, contrôles
+du projet) puis ouvre la PR. **Si une vérification échoue, aucune PR n'est ouverte** :
+corrige et relance.
 
 Si tu ne peux pas satisfaire `done`, **ne simule pas la réussite**. Écris dans `.task.md`
 ce que tu as tenté et pourquoi ça bloque, puis `crank finalize --draft`.

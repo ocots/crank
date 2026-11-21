@@ -82,11 +82,42 @@ Ce ne sont pas des consignes dans un prompt : ce sont des vérifications qui ref
   passer le test » en modifiant le code testé.
 - **`docstrings_only`** — le rôle `doc` peut toucher `src/**`, mais l'AST privé de ses
   docstrings doit rester identique. Vérifié, pas supposé.
+- **données sensibles** — chemins et motifs interdits (`[sensitive]`, voir plus bas) :
+  refusés même en `--draft`, parce qu'une donnée poussée ne se rattrape pas.
 - **critère `done`** — exécuté ; s'il échoue, aucune PR n'est ouverte.
 - **conflits de périmètre** — deux tâches aux chemins qui se recouvrent ne partent jamais
   en parallèle.
 - **dépendances** — une tâche qui attend une autre (`bloque_sur: ["#12"]`) ne part pas
   avant sa fusion.
+
+## Les données sensibles
+
+Copies d'examen, relevés bancaires, listes nominatives : la règle est que les données
+vivent **hors du dépôt**. Le `.gitignore` n'est qu'un filet — rien n'empêche un agent de
+commiter une fixture « réaliste » copiée d'un vrai fichier, ou un fichier égaré dans un
+chemin imprévu. Et un commit poussé ne se rattrape pas.
+
+D'où une vérification **dure** de `crank finalize`, déclarée par dépôt :
+
+```toml
+[sensitive]
+forbidden_paths = ["data/**", "*.csv", "*.pdf"]   # fichiers interdits dans le diff
+allowed_paths   = ["tests/fixtures/**"]           # où les données fictives sont permises
+patterns = [                                      # motifs interdits dans les lignes ajoutées
+  { name = "IBAN",   regex = '\bFR\d{2}(?:\s?[0-9A-Z]{4}){5}\s?[0-9A-Z]{3}\b' },
+  { name = "e-mail", regex = '[\w.+-]+@[\w-]+\.[\w.]+' },
+]
+```
+
+- Seuls les fichiers **ajoutés ou modifiés** et les lignes **ajoutées** sont examinés :
+  une donnée qu'une PR retire, ou qui était déjà là, n'est pas son affaire.
+- `allowed_paths` échappe aux deux contrôles, chemins et motifs.
+- Le refus désigne le fichier, la ligne et la règle — **jamais la valeur trouvée**, qui
+  finirait sinon dans un terminal, un log ou un corps de PR.
+- Une regex invalide est refusée au chargement de la configuration, pas au moment où la
+  PR devait être protégée.
+- Sans section `[sensitive]`, la vérification passe. `crank init` en propose une,
+  commentée.
 
 ## Les décisions
 

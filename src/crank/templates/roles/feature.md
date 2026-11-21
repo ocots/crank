@@ -26,6 +26,9 @@ bon ».
 - Il doit rester sous le plafond de lignes. **S'il est clair qu'il ne tiendra pas, arrête
   et dis-le** plutôt que de produire une PR irrelisable : la bonne réponse est de découper
   la tâche.
+- Aucune donnée réelle : les chemins et motifs de la section `[sensitive]` de
+  `.crank.toml` sont refusés, même en `--draft`. Tes tests utilisent des données
+  **fictives**, écrites pour l'occasion, dans les chemins permis (`allowed_paths`).
 - `crank finalize` refusera la PR si l'une de ces conditions n'est pas remplie. Inutile
   de tenter.
 

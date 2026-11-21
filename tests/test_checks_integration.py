@@ -15,10 +15,14 @@ from crank.checks import (
     changed_files,
     check_docstrings_only,
     check_scope,
+    check_sensitive,
     check_size,
+    diff_hygiene,
     diff_size,
+    finalize_gate,
 )
-from crank.config import Role
+from crank.config import Role, SensitivePattern, SensitiveRules
+from crank.checks import CheckResult
 from crank.models import Tier
 
 
@@ -135,3 +139,70 @@ class TestDocstringsOnly:
         (repo / "src" / "mod.py").write_text("def f(x):\n    return 0\n")
         commit(repo, "libre")
         assert check_docstrings_only(repo, "base", FEATURE).ok
+
+
+IBAN = "FR76 3000 6000 0112 3456 7890 189"  # IBAN de démonstration, fictif
+RULES = SensitiveRules(
+    forbidden_paths=("*.csv", "data/**"),
+    allowed_paths=("tests/fixtures/**",),
+    patterns=(SensitivePattern("IBAN", r"\bFR\d{2}(?:\s?[0-9A-Z]{4}){5}\s?[0-9A-Z]{3}\b"),),
+)
+
+
+class TestDonneesSensibles:
+    def test_csv_ajoute_refuse(self, repo):
+        (repo / "releve.csv").write_text("date;montant\n")
+        commit(repo, "données")
+        result = check_sensitive(repo, "base", RULES)
+        assert not result.ok
+        assert "releve.csv" in result.detail
+
+    def test_csv_dans_les_fixtures_accepte(self, repo):
+        (repo / "tests" / "fixtures").mkdir()
+        (repo / "tests" / "fixtures" / "releve.csv").write_text("date;montant\n")
+        commit(repo, "fixture fictive")
+        assert check_sensitive(repo, "base", RULES).ok
+
+    def test_iban_ajoute_refuse_sans_etre_recopie(self, repo):
+        (repo / "src" / "conf.py").write_text(f"X = 1\nIBAN = '{IBAN}'\n")
+        commit(repo, "iban")
+        result = check_sensitive(repo, "base", RULES)
+        assert not result.ok
+        assert "src/conf.py:2 (IBAN)" in result.detail
+        assert IBAN not in result.line()
+
+    def test_iban_supprime_accepte(self, repo):
+        (repo / "src" / "conf.py").write_text(f"IBAN = '{IBAN}'\n")
+        commit(repo, "existant")
+        git(repo, "branch", "-f", "base")
+        (repo / "src" / "conf.py").write_text("IBAN = None\n")
+        commit(repo, "retrait")
+        assert check_sensitive(repo, "base", RULES).ok
+
+    def test_iban_deja_present_et_inchange_accepte(self, repo):
+        (repo / "src" / "conf.py").write_text(f"IBAN = '{IBAN}'\n")
+        commit(repo, "existant")
+        git(repo, "branch", "-f", "base")
+        (repo / "src" / "conf.py").write_text(f"IBAN = '{IBAN}'\nY = 2\n")
+        commit(repo, "ajout voisin")
+        assert check_sensitive(repo, "base", RULES).ok
+
+    def test_chemin_accentue(self, repo):
+        (repo / "relevé.csv").write_text("x\n")
+        commit(repo, "accent")
+        assert "relevé.csv" in check_sensitive(repo, "base", RULES).detail
+
+    def test_sans_regles(self, repo):
+        (repo / "releve.csv").write_text("x\n")
+        commit(repo, "données")
+        result = check_sensitive(repo, "base", SensitiveRules())
+        assert result.ok and "aucune règle" in result.detail
+
+    def test_draft_ne_contourne_pas(self, repo):
+        """Un brouillon reste une PR : une donnée poussée ne se rattrape pas."""
+        (repo / "data").mkdir()
+        (repo / "data" / "notes.txt").write_text("x\n")
+        commit(repo, "égaré")
+        hard = diff_hygiene(repo, "base", Role("feature", Tier.P2, ()), 300, RULES)
+        bloque, _ = finalize_gate(hard, [CheckResult("done", False)], draft=True)
+        assert bloque
