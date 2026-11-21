@@ -202,12 +202,8 @@ def finalize(dry_run: bool, draft: bool) -> None:
     git_ops.run(["git", "fetch", "origin", config.main_branch], cwd, check=False)
 
     # Hygiène du diff — jamais négociable, même en --draft : un brouillon reste une PR,
-    # pas une excuse pour un diff hors périmètre ou irrelisable.
-    hard = [
-        checks.check_scope(cwd, base, role),
-        checks.check_size(cwd, base, config.max_diff_lines),
-        checks.check_docstrings_only(cwd, base, role),
-    ]
+    # pas une excuse pour un diff hors périmètre, irrelisable ou porteur de données.
+    hard = checks.diff_hygiene(cwd, base, role, config.max_diff_lines, config.sensitive)
     # Complétude fonctionnelle — bloquante normalement, mais c'est précisément ce
     # qu'un --draft sert à montrer incomplet : « voici où j'en suis, voici ce qui
     # bloque ». La rendre bloquante aussi en --draft rendrait l'option inutilisable.
@@ -360,7 +356,7 @@ def init(labels: bool) -> None:
     click.echo("Prochaine étape : créer une issue avec un bloc ```crank, puis `crank next`.")
 
 
-_DEFAULT_CONFIG = """# Configuration crank — voir `crank --help`
+_DEFAULT_CONFIG = r"""# Configuration crank — voir `crank --help`
 
 [crank]
 wip_max = 4              # dimensionné pour qu'UNE session vide la file
@@ -371,6 +367,16 @@ main_branch = "main"
 # Commandes lancées par `crank finalize`, en plus du critère « done » de la tâche.
 # tests = "pytest -q"
 # lint  = "ruff check ."
+
+# [sensitive]
+# Ce qui ne doit jamais entrer dans le dépôt. `crank finalize` refuse la PR, même en
+# --draft. Les données fictives vont dans `allowed_paths`.
+# forbidden_paths = ["data/**", "*.csv", "*.pdf"]
+# allowed_paths   = ["tests/fixtures/**"]
+# patterns = [
+#   { name = "IBAN",   regex = '\bFR\d{2}(?:\s?[0-9A-Z]{4}){5}\s?[0-9A-Z]{3}\b' },
+#   { name = "e-mail", regex = '[\w.+-]+@[\w-]+\.[\w.]+' },
+# ]
 
 [roles.feature]
 tier = "P2"

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from crank.checks import CheckResult, finalize_gate, logic_unchanged, path_allowed
+from crank.checks import (
+    CheckResult,
+    added_lines,
+    finalize_gate,
+    logic_unchanged,
+    path_allowed,
+    scan_sensitive,
+)
+from crank.config import SensitivePattern, SensitiveRules
 
 OK = CheckResult("x", True)
 KO = CheckResult("x", False, "raison")
@@ -84,3 +92,76 @@ class TestFinalizeGate:
 
     def test_les_deux_en_echec_bloquent_meme_en_draft(self):
         assert finalize_gate([KO], [KO], draft=True) == (True, True)
+
+
+# Un IBAN de démonstration, au format français — fictif.
+IBAN = "FR76 3000 6000 0112 3456 7890 189"
+IBAN_RULE = SensitivePattern("IBAN", r"\bFR\d{2}(?:\s?[0-9A-Z]{4}){5}\s?[0-9A-Z]{3}\b")
+RULES = SensitiveRules(
+    forbidden_paths=("*.csv", "data/**"),
+    allowed_paths=("tests/fixtures/**",),
+    patterns=(IBAN_RULE,),
+)
+
+DIFF = """diff --git a/src/a.py b/src/a.py
+index 1..2 100644
+--- a/src/a.py
++++ b/src/a.py
+@@ -3,0 +4,2 @@ def f():
++x = 1
++y = 2
+@@ -10 +12 @@
+-ancien = 0
++nouveau = 0
+diff --git a/src/vieux.py b/src/vieux.py
+deleted file mode 100644
+--- a/src/vieux.py
++++ /dev/null
+@@ -1 +0,0 @@
+-supprime = 1
+"""
+
+
+class TestAddedLines:
+    def test_fichier_et_numeros_de_ligne(self):
+        assert added_lines(DIFF) == [
+            ("src/a.py", 4, "x = 1"),
+            ("src/a.py", 5, "y = 2"),
+            ("src/a.py", 12, "nouveau = 0"),
+        ]
+
+    def test_lignes_supprimees_ignorees(self):
+        assert all("supprime" not in text for _, _, text in added_lines(DIFF))
+
+    def test_diff_vide(self):
+        assert added_lines("") == []
+
+
+class TestScanSensitive:
+    """Une donnée poussée ne se rattrape pas : c'est une vérification, pas une consigne."""
+
+    def test_chemin_interdit(self):
+        assert scan_sensitive(("releve.csv",), [], RULES) == ["releve.csv (chemin interdit)"]
+
+    def test_chemin_interdit_en_profondeur(self):
+        assert scan_sensitive(("data/2026/x.txt",), [], RULES) == ["data/2026/x.txt (chemin interdit)"]
+
+    def test_exception_pour_les_fixtures(self):
+        assert scan_sensitive(("tests/fixtures/releve.csv",), [], RULES) == []
+
+    def test_motif_dans_une_ligne_ajoutee(self):
+        found = scan_sensitive((), [("src/a.py", 7, f"iban = '{IBAN}'")], RULES)
+        assert found == ["src/a.py:7 (IBAN)"]
+
+    def test_la_valeur_nest_jamais_recopiee(self):
+        found = scan_sensitive((), [("src/a.py", 7, f"iban = '{IBAN}'")], RULES)
+        assert all(IBAN not in f and "3000" not in f for f in found)
+
+    def test_motif_permis_dans_les_fixtures(self):
+        assert scan_sensitive((), [("tests/fixtures/f.py", 1, IBAN)], RULES) == []
+
+    def test_aucune_regle(self):
+        assert scan_sensitive(("x.csv",), [("a.py", 1, IBAN)], SensitiveRules()) == []
+
+    def test_ligne_anodine(self):
+        assert scan_sensitive(("src/a.py",), [("src/a.py", 1, "total = 3")], RULES) == []

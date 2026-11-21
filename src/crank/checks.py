@@ -7,12 +7,13 @@ sort du périmètre de son rôle est refusée, pas signalée.
 from __future__ import annotations
 
 import ast
+import re
 import subprocess
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 
-from .config import Role
+from .config import Role, SensitiveRules
 
 
 @dataclass(frozen=True)
@@ -138,6 +139,87 @@ def check_docstrings_only(cwd: Path, base: str, role: Role) -> CheckResult:
     return CheckResult("docstrings seules", True)
 
 
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def added_lines(diff: str) -> list[tuple[str, int, str]]:
+    """Les lignes AJOUTÉES d'un `git diff -U0`, avec leur fichier et leur numéro.
+
+    Seules les lignes ajoutées comptent : une donnée qu'on retire ou qui était déjà là
+    n'est pas l'affaire de cette PR.
+    """
+    lines: list[tuple[str, int, str]] = []
+    path: str | None = None
+    lineno = 0
+    for raw in diff.splitlines():
+        if raw.startswith("+++ "):
+            target = raw[4:]
+            path = target[2:] if target.startswith("b/") else None  # /dev/null : supprimé
+        elif raw.startswith("@@"):
+            match = _HUNK.match(raw)
+            lineno = int(match.group(1)) if match else 0
+        elif raw.startswith("+") and path is not None:
+            lines.append((path, lineno, raw[1:]))
+            lineno += 1
+    return lines
+
+
+def scan_sensitive(
+    files: tuple[str, ...], lines: list[tuple[str, int, str]], rules: SensitiveRules
+) -> list[str]:
+    """Ce qui enfreint les règles, désigné par fichier, ligne et règle.
+
+    **Jamais la valeur trouvée** : le rapport finit dans un terminal, un log, parfois un
+    corps de PR — le recopier y ferait fuir exactement ce qu'on cherche à retenir.
+    """
+    offenders: list[str] = []
+    for path in files:
+        forbidden = path_allowed(path, rules.forbidden_paths)
+        if forbidden and not path_allowed(path, rules.allowed_paths):
+            offenders.append(f"{path} (chemin interdit)")
+    compiled = [(p.name, re.compile(p.regex)) for p in rules.patterns]
+    for path, lineno, text in lines:
+        if path_allowed(path, rules.allowed_paths):
+            continue
+        for name, regex in compiled:
+            if regex.search(text):
+                offenders.append(f"{path}:{lineno} ({name})")
+    return offenders
+
+
+def check_sensitive(cwd: Path, base: str, rules: SensitiveRules) -> CheckResult:
+    if not rules.declared:
+        return CheckResult("données sensibles", True, "aucune règle déclarée")
+    quiet = ["-c", "core.quotePath=false"]  # chemins accentués en clair, pas en octal
+    names = _git([*quiet, "diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD"], cwd)
+    files = tuple(line for line in names.splitlines() if line.strip())
+    diff = _git([*quiet, "diff", "-U0", "--no-color", "--no-ext-diff", f"{base}...HEAD"], cwd)
+    offenders = scan_sensitive(files, added_lines(diff), rules)
+    if offenders:
+        return CheckResult(
+            "données sensibles",
+            False,
+            ", ".join(offenders[:5]) + ("…" if len(offenders) > 5 else ""),
+        )
+    return CheckResult("données sensibles", True)
+
+
+def diff_hygiene(
+    cwd: Path, base: str, role: Role, max_lines: int, rules: SensitiveRules
+) -> list[CheckResult]:
+    """Les vérifications que rien ne contourne, pas même `--draft`.
+
+    Un brouillon reste une PR : ni un diff hors périmètre, ni une donnée sensible n'y
+    ont leur place. Une donnée poussée ne se rattrape pas.
+    """
+    return [
+        check_scope(cwd, base, role),
+        check_size(cwd, base, max_lines),
+        check_docstrings_only(cwd, base, role),
+        check_sensitive(cwd, base, rules),
+    ]
+
+
 def run_command(name: str, command: str, cwd: Path) -> CheckResult:
     proc = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True)
     if proc.returncode == 0:
@@ -153,7 +235,7 @@ def finalize_gate(
     git ni à `gh`, ce que le reste de `finalize` doit faire.
 
     Retourne `(bloque, critere_manquant)`. L'hygiène du diff (`hard` : périmètre,
-    taille, docstrings) bloque toujours. Le critère `done` et les vérifications
+    taille, docstrings, données sensibles) bloque toujours. Le critère `done` et les vérifications
     personnalisées (`soft`) ne bloquent qu'en dehors de `--draft` — sans ça, `--draft`
     ne pourrait jamais montrer un travail précisément incomplet, ce qui est son but.
     """
