@@ -64,6 +64,7 @@ def make_state(
     decisions: tuple[Decision, ...] = (),
     closed: tuple[int, ...] = (),
     ci_ok: bool = True,
+    merged_open: tuple[tuple[int, int], ...] = (),
 ) -> RepoState:
     return RepoState(
         ci_main_ok=ci_ok,
@@ -71,6 +72,7 @@ def make_state(
         prs=prs,
         decisions=decisions,
         closed_issues=frozenset(closed),
+        merged_open=merged_open,
     )
 
 

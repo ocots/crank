@@ -73,7 +73,9 @@ def unfinished_tasks(task: Task, state: RepoState) -> tuple[int, ...]:
     """
     if task.spec is None:
         return ()
-    return tuple(n for n in task.spec.task_refs if n not in state.closed_issues)
+    return tuple(
+        n for n in task.spec.task_refs if n not in state.closed_issues and state.merged_pr(n) is None
+    )
 
 
 def waiting_on(state: RepoState) -> dict[int, tuple[int, ...]]:
@@ -91,6 +93,8 @@ def waiting_on(state: RepoState) -> dict[int, tuple[int, ...]]:
 
 def task_blocker(task: Task, state: RepoState, config: Config) -> str:
     """Pourquoi cette tâche n'est-elle pas éligible ? Chaîne vide si elle l'est."""
+    if (pr := state.merged_pr(task.number)) is not None:
+        return f"PR #{pr} fusionnée, issue restée ouverte — la fermer"
     if task.claimed:
         return "déjà réclamée"
     if task.human_only:
@@ -134,6 +138,14 @@ def _sort_key(task: Task, config: Config) -> tuple[int, int, int]:
     )
 
 
+def _merged_notes(state: RepoState) -> list[str]:
+    return [
+        f"issue #{number} restée ouverte alors que sa PR #{pr} est fusionnée "
+        f"(« Closes #{number} » perdu ?) — gh issue close {number}"
+        for number, pr in state.merged_open
+    ]
+
+
 def _stop_notes(state: RepoState) -> tuple[str, ...]:
     notes: list[str] = []
 
@@ -143,6 +155,8 @@ def _stop_notes(state: RepoState) -> tuple[str, ...]:
             f"{len(pending)} décision(s) en attente — à traiter EN PREMIER en session : "
             + ", ".join(f"{d.ref} ({d.title})" for d in pending)
         )
+
+    notes.extend(_merged_notes(state))
 
     human = [t for t in state.tasks if t.human_only and not t.claimed]
     if human:
@@ -229,6 +243,7 @@ def plan(state: RepoState, config: Config) -> Plan:
             task=chosen,
             role=chosen.spec.role,
             skipped=tuple(skipped),
+            notes=tuple(_merged_notes(state)),
         )
 
     # P5 — rien à faire. Ce n'est pas un échec : c'est un rapport.

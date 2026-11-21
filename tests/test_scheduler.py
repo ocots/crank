@@ -323,6 +323,30 @@ class TestConflitsDePerimetre:
         assert plan(state, config).action is Action.STOP
 
 
+class TestPrFusionneeIssueOuverte:
+    """Le `Closes #N` perdu : PR fusionnée, issue restée ouverte."""
+
+    def etat(self):
+        return make_state(
+            tasks=(make_task(36), make_task(37, bloque_sur=("#36",), touche=("src/b/**",))),
+            merged_open=((36, 39),),
+        )
+
+    def test_la_dependante_est_debloquee(self, config):
+        state = self.etat()
+        assert task_blocker(state.task(37), state, config) == ""
+
+    def test_la_tache_n_est_pas_proposee(self, config):
+        state = self.etat()
+        assert task_blocker(state.task(36), state, config) == "PR #39 fusionnée, issue restée ouverte — la fermer"
+        assert plan(state, config).task.number == 37
+
+    def test_une_note_le_signale(self, config):
+        notes = plan(self.etat(), config).notes
+        assert any("issue #36 restée ouverte alors que sa PR #39 est fusionnée" in n and "gh issue close 36" in n
+                   for n in notes)
+
+
 class TestPathsOverlap:
     def test_identiques(self):
         assert paths_overlap(("src/a/**",), ("src/a/**",))

@@ -133,6 +133,12 @@ class RepoState:
     # Issues fermées parmi celles que référence un `bloque_sur`. Une issue ouverte est
     # dans `tasks` ; une issue ni ouverte ni fermée est inconnue, et bloque.
     closed_issues: frozenset[int] = frozenset()
+    # (tâche, PR) : PR fusionnée d'une branche task/<n>-… dont l'issue est restée ouverte
+    # (`Closes #n` perdu). La tâche est terminée de fait : elle ne bloque plus personne.
+    merged_open: tuple[tuple[int, int], ...] = ()
+
+    def merged_pr(self, number: int) -> int | None:
+        return next((pr for t, pr in self.merged_open if t == number), None)
 
     def decision(self, ref: str) -> Decision | None:
         for d in self.decisions:
