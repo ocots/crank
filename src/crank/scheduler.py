@@ -49,11 +49,37 @@ def unsettled_decisions(task: Task, state: RepoState) -> tuple[str, ...]:
     if task.spec is None:
         return ()
     pending: list[str] = []
-    for ref in task.spec.bloque_sur:
+    for ref in task.spec.decision_refs:
         decision = state.decision(ref)
         if decision is None or not decision.settled:
             pending.append(ref)
     return tuple(pending)
+
+
+def unfinished_tasks(task: Task, state: RepoState) -> tuple[int, ...]:
+    """Les tâches dont celle-ci dépend et qui ne sont pas fermées.
+
+    Fermée, quelle que soit la raison (fusion de sa PR, abandon), débloque : comme pour
+    les décisions, ce qui bloque, c'est ce qui n'est pas terminé. Une référence vers une
+    issue inconnue bloque — mieux vaut une tâche qui attend qu'une tâche qui part sur un
+    `main` qui ne contient pas encore ce dont elle a besoin.
+    """
+    if task.spec is None:
+        return ()
+    return tuple(n for n in task.spec.task_refs if n not in state.closed_issues)
+
+
+def waiting_on(state: RepoState) -> dict[int, tuple[int, ...]]:
+    """Pour chaque tâche non terminée, les tâches ouvertes qui l'attendent.
+
+    C'est ce qui permet à `crank status` de remonter les PRs qui débloquent d'autres
+    tâches (§8.3) : les fusionner en premier libère le plus de travail.
+    """
+    waiting: dict[int, list[int]] = {}
+    for task in state.tasks:
+        for number in unfinished_tasks(task, state):
+            waiting.setdefault(number, []).append(task.number)
+    return {n: tuple(sorted(ts)) for n, ts in sorted(waiting.items())}
 
 
 def task_blocker(task: Task, state: RepoState, config: Config) -> str:
@@ -71,13 +97,25 @@ def task_blocker(task: Task, state: RepoState, config: Config) -> str:
     if config.role(task.spec.role) is None:
         return f"rôle « {task.spec.role} » inconnu"
     pending = unsettled_decisions(task, state)
-    if pending:
-        return "bloquée sur décision " + ", ".join(pending)
+    waiting = unfinished_tasks(task, state)
+    if pending or waiting:
+        parts = []
+        if pending:
+            parts.append("décision " + ", ".join(pending))
+        if waiting:
+            parts.append("tâche " + ", ".join(_task_label(n, state) for n in waiting))
+        return "bloquée sur " + " ; ".join(parts)
     for other in state.in_progress_tasks:
         other_paths = other.spec.touche if other.spec else ()
         if paths_overlap(task.spec.touche, other_paths):
             return f"périmètre en conflit avec {other.ref} (en cours)"
     return ""
+
+
+def _task_label(number: int, state: RepoState) -> str:
+    if state.task(number) is None:
+        return f"#{number} (introuvable)"
+    return f"#{number}"
 
 
 def _sort_key(task: Task, config: Config) -> tuple[int, int, int]:
@@ -89,7 +127,7 @@ def _sort_key(task: Task, config: Config) -> tuple[int, int, int]:
     )
 
 
-def _stop_notes(state: RepoState, config: Config, skipped: list[tuple[int, str]]) -> tuple[str, ...]:
+def _stop_notes(state: RepoState) -> tuple[str, ...]:
     notes: list[str] = []
 
     pending = [d for d in state.decisions if not d.settled]
@@ -114,9 +152,11 @@ def _stop_notes(state: RepoState, config: Config, skipped: list[tuple[int, str]]
             + ", ".join(t.ref for t in malformed)
         )
 
-    blocked_count = sum(1 for _, why in skipped if why.startswith("bloquée sur décision"))
-    eligible_total = sum(1 for t in state.tasks if not t.human_only and not t.claimed)
-    if eligible_total and blocked_count / eligible_total > 0.5:
+    # La famine ne concerne que les décisions : ce sont elles qui attendent l'humain.
+    # Une tâche qui attend une autre tâche attend du travail, pas un arbitrage.
+    available = [t for t in state.tasks if not t.human_only and not t.claimed]
+    blocked_count = sum(1 for t in available if unsettled_decisions(t, state))
+    if available and blocked_count / len(available) > 0.5:
         notes.append(
             "⚠ plus de la moitié des tâches disponibles sont bloquées sur tes décisions "
             "— risque de famine (§7)"
@@ -159,7 +199,7 @@ def plan(state: RepoState, config: Config) -> Plan:
                 f"plafond atteint : {state.open_wip} PR(s) ouverte(s) pour WIP_MAX="
                 f"{config.wip_max}. À toi de jouer — une session vide la file."
             ),
-            notes=_stop_notes(state, config, []),
+            notes=_stop_notes(state),
         )
 
     # P2 → P4 — première tâche éligible, dans l'ordre des tiers.
@@ -189,6 +229,6 @@ def plan(state: RepoState, config: Config) -> Plan:
         action=Action.STOP,
         tier=Tier.P5,
         reason="aucune tâche prête",
-        notes=_stop_notes(state, config, skipped),
+        notes=_stop_notes(state),
         skipped=tuple(skipped),
     )

@@ -62,9 +62,16 @@ def make_state(
     tasks: tuple[Task, ...] = (),
     prs: tuple[PullRequest, ...] = (),
     decisions: tuple[Decision, ...] = (),
+    closed: tuple[int, ...] = (),
     ci_ok: bool = True,
 ) -> RepoState:
-    return RepoState(ci_main_ok=ci_ok, tasks=tasks, prs=prs, decisions=decisions)
+    return RepoState(
+        ci_main_ok=ci_ok,
+        tasks=tasks,
+        prs=prs,
+        decisions=decisions,
+        closed_issues=frozenset(closed),
+    )
 
 
 @pytest.fixture

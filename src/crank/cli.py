@@ -19,6 +19,7 @@ from . import briefs, checks, git_ops, naming, state, taskfile
 from .config import CONFIG_NAME, Config, load_config
 from .models import CLAIM_LABEL, FAILED_LABEL, REVIEW_LABEL, Action, Plan
 from .scheduler import plan as compute_plan
+from .scheduler import waiting_on
 
 LABELS = {
     CLAIM_LABEL: "0e8a16",
@@ -299,15 +300,34 @@ def status() -> None:
     else:
         click.echo("   (aucune)")
 
+    unblocks = waiting_on(current)
+
+    def unblocked_by(pr) -> tuple[int, ...]:
+        return unblocks.get(pr.task_number, ()) if pr.task_number else ()
+
+    def review_order(pr) -> tuple[bool, bool, int]:
+        return (pr.is_draft, not unblocked_by(pr), pr.number)
+
     click.echo()
-    click.echo(click.style("2. PRs à relire", bold=True))
+    click.echo(click.style("2. PRs à relire — celles qui débloquent d'autres tâches d'abord", bold=True))
     if current.prs:
-        for pr in sorted(current.prs, key=lambda p: (p.is_draft, p.number)):
+        for pr in sorted(current.prs, key=review_order):
             mark = " (brouillon)" if pr.is_draft else ""
             flag = " ⟵ changements demandés" if pr.needs_author_action else ""
-            click.echo(f"   • #{pr.number} {pr.title}{mark}{flag}")
+            freed = unblocked_by(pr)
+            frees = f" ⟵ débloque {', '.join(f'#{n}' for n in freed)}" if freed else ""
+            click.echo(f"   • #{pr.number} {pr.title}{mark}{flag}{frees}")
     else:
         click.echo("   (aucune)")
+
+    if unblocks:
+        click.echo()
+        click.echo(click.style("   Tâches en attente d'une autre", bold=True))
+        for number, dependents in unblocks.items():
+            known = "" if current.task(number) else " (introuvable)"
+            click.echo(
+                f"   • #{number}{known} ← attendue par {', '.join(f'#{n}' for n in dependents)}"
+            )
 
     human = [t for t in current.tasks if t.human_only]
     if human:

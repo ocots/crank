@@ -8,9 +8,13 @@ Format attendu :
     touche:
       - src/exam_core/vision/**
       - tests/vision/**
-    bloque_sur: ["0007"]
+    bloque_sur: ["0007", "#12"]
     budget: 1 session
     ```
+
+`bloque_sur` mêle des décisions (`"0007"`, un fichier de `decisions/`) et des tâches
+(`"#12"`, une issue). Les guillemets sont obligatoires autour de `"#12"` : sans eux,
+YAML lit `#12` comme un commentaire.
 
 Une tâche sans `done` exécutable n'est pas recevable : c'est le filtre qui empêche
 le système de produire du bruit (voir §4 du document de conception).
@@ -23,6 +27,9 @@ import re
 import yaml
 
 from .models import TaskSpec
+
+_TASK_REF_LIKE = re.compile(r"^#")
+_TASK_REF = re.compile(r"^#\d+$")
 
 _BLOCK = re.compile(r"```crank\s*\n(.*?)\n```", re.DOTALL | re.IGNORECASE)
 
@@ -67,9 +74,28 @@ def parse_spec(body: str | None) -> TaskSpec:
         role=role,
         done=done,
         touche=_as_tuple(raw.get("touche"), "touche"),
-        bloque_sur=tuple(str(r).strip() for r in _as_tuple(raw.get("bloque_sur"), "bloque_sur")),
+        bloque_sur=_parse_bloque_sur(raw),
         budget=str(raw.get("budget", "")).strip(),
     )
+
+
+def _parse_bloque_sur(raw: dict) -> tuple[str, ...]:
+    value = raw.get("bloque_sur")
+    # `bloque_sur: #12` donne une clé présente mais vide : la dépendance disparaîtrait
+    # sans bruit. Un champ déclaré vide est presque toujours ce piège-là.
+    empty_scalar = "bloque_sur" in raw and value is None
+    if empty_scalar or (isinstance(value, (list, tuple)) and any(v is None for v in value)):
+        raise SpecError(
+            "champ « bloque_sur » : référence vide — une tâche s'écrit entre "
+            'guillemets, « "#12" », sinon YAML lit #12 comme un commentaire'
+        )
+    refs = tuple(str(r).strip() for r in _as_tuple(value, "bloque_sur"))
+    for ref in refs:
+        if _TASK_REF_LIKE.match(ref) and not _TASK_REF.match(ref):
+            raise SpecError(
+                f"champ « bloque_sur » : « {ref} » — une tâche s'écrit « #<numéro> »"
+            )
+    return refs
 
 
 def try_parse_spec(body: str | None) -> tuple[TaskSpec | None, str]:

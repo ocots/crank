@@ -85,6 +85,8 @@ Ce ne sont pas des consignes dans un prompt : ce sont des vérifications qui ref
 - **critère `done`** — exécuté ; s'il échoue, aucune PR n'est ouverte.
 - **conflits de périmètre** — deux tâches aux chemins qui se recouvrent ne partent jamais
   en parallèle.
+- **dépendances** — une tâche qui attend une autre (`bloque_sur: ["#12"]`) ne part pas
+  avant sa fusion.
 
 ## Les décisions
 
@@ -96,6 +98,30 @@ par le scheduler comme une vraie arête de dépendance, pas comme une convention
 
 Un fichier par décision (et non une table) parce que plusieurs décisions peuvent être en
 vol simultanément : une table entrerait en conflit à chaque fois.
+
+## Les dépendances entre tâches
+
+Une tâche qui a besoin du **code** d'une autre l'attend avec `bloque_sur: ["#12"]`, à
+côté des décisions :
+
+```crank
+bloque_sur: ["0007", "#12"]
+```
+
+Elle reste invisible tant que l'issue 12 est ouverte. La PR de la tâche 12 contient
+`Closes #12` : **la fusionner ferme l'issue et débloque la suite**. Une issue fermée
+sans fusion débloque aussi — ce qui bloque, c'est ce qui n'est pas terminé. Une
+référence vers une issue inconnue bloque, et `crank next` le dit.
+
+Le recouvrement de périmètres ne suffit pas pour ça : il ne protège que tant que l'autre
+tâche est réclamée. Dès sa PR ouverte, elle ne l'est plus, et la suivante partirait d'un
+`main` qui ne contient pas encore ce dont elle a besoin.
+
+`crank status` remonte en tête les PRs qui débloquent d'autres tâches (« ⟵ débloque
+#13 ») : les relire d'abord libère le plus de travail.
+
+**Les guillemets sont obligatoires** autour de `"#12"` : sans eux, YAML lit `#12` comme un
+commentaire. Le bloc est alors refusé, avec un message qui le dit.
 
 ## `human-only`
 
