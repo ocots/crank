@@ -37,16 +37,21 @@ def changed_files(cwd: Path, base: str) -> tuple[str, ...]:
     return tuple(line for line in out.splitlines() if line.strip())
 
 
-def diff_size(cwd: Path, base: str) -> int:
-    out = _git(["diff", "--numstat", f"{base}...HEAD"], cwd)
-    total = 0
+def diff_size_by_file(cwd: Path, base: str) -> dict[str, int]:
+    """Lignes ajoutées + supprimées, par fichier. Un fichier binaire compte pour 0."""
+    out = _git(
+        ["-c", "core.quotePath=false", "diff", "--numstat", "--no-renames", f"{base}...HEAD"], cwd
+    )
+    sizes: dict[str, int] = {}
     for line in out.splitlines():
         parts = line.split("\t")
-        if len(parts) >= 2:
-            for n in parts[:2]:
-                if n.isdigit():
-                    total += int(n)
-    return total
+        if len(parts) >= 3:
+            sizes[parts[2]] = sum(int(n) for n in parts[:2] if n.isdigit())
+    return sizes
+
+
+def diff_size(cwd: Path, base: str) -> int:
+    return sum(diff_size_by_file(cwd, base).values())
 
 
 def path_allowed(path: str, patterns: tuple[str, ...]) -> bool:
@@ -72,15 +77,26 @@ def check_scope(cwd: Path, base: str, role: Role) -> CheckResult:
     return CheckResult(f"périmètre ({role.name})", True)
 
 
-def check_size(cwd: Path, base: str, max_lines: int) -> CheckResult:
-    size = diff_size(cwd, base)
-    ok = size <= max_lines
-    return CheckResult(
-        "taille du diff",
-        ok,
-        f"{size} lignes (plafond {max_lines})"
-        + ("" if ok else " — découpe la tâche, une PR relisible ou pas de PR"),
-    )
+def check_size(
+    cwd: Path, base: str, max_lines: int, exclude: tuple[str, ...] = ()
+) -> CheckResult:
+    """Le plafond porte sur ce qui se relit. Les fichiers de `exclude` (générés : lockfiles,
+    suivi de tâche) ne comptent pas — mais l'exclusion reste affichée, pour rester visible.
+    """
+    counted = 0
+    excluded: dict[str, int] = {}
+    for path, lines in diff_size_by_file(cwd, base).items():
+        if path_allowed(path, exclude):
+            excluded[path] = lines
+        else:
+            counted += lines
+    ok = counted <= max_lines
+    detail = f"{counted} lignes (plafond {max_lines})"
+    if excluded:
+        detail += ", hors " + ", ".join(f"{p} : {n}" for p, n in sorted(excluded.items()))
+    if not ok:
+        detail += " — découpe la tâche, une PR relisible ou pas de PR"
+    return CheckResult("taille du diff", ok, detail)
 
 
 def _strip_docstrings(tree: ast.AST) -> ast.AST:
@@ -205,7 +221,12 @@ def check_sensitive(cwd: Path, base: str, rules: SensitiveRules) -> CheckResult:
 
 
 def diff_hygiene(
-    cwd: Path, base: str, role: Role, max_lines: int, rules: SensitiveRules
+    cwd: Path,
+    base: str,
+    role: Role,
+    max_lines: int,
+    rules: SensitiveRules,
+    size_exclude: tuple[str, ...] = (),
 ) -> list[CheckResult]:
     """Les vérifications que rien ne contourne, pas même `--draft`.
 
@@ -214,7 +235,7 @@ def diff_hygiene(
     """
     return [
         check_scope(cwd, base, role),
-        check_size(cwd, base, max_lines),
+        check_size(cwd, base, max_lines, size_exclude),
         check_docstrings_only(cwd, base, role),
         check_sensitive(cwd, base, rules),
     ]

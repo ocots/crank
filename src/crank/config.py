@@ -60,6 +60,7 @@ DEFAULT_ROLES: dict[str, Role] = {
 class Config:
     wip_max: int = 4
     max_diff_lines: int = 300
+    size_exclude: tuple[str, ...] = ()
     main_branch: str = "main"
     decisions_dir: str = "decisions"
     worktree_root: str = ".."
@@ -123,6 +124,7 @@ def load_config(root: Path) -> Config:
     return Config(
         wip_max=int(section.get("wip_max", 4)),
         max_diff_lines=int(section.get("max_diff_lines", 300)),
+        size_exclude=tuple(section.get("size_exclude", ())),
         main_branch=str(section.get("main_branch", "main")),
         decisions_dir=str(section.get("decisions_dir", "decisions")),
         worktree_root=str(section.get("worktree_root", "..")),

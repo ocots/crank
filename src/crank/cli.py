@@ -204,7 +204,9 @@ def finalize(dry_run: bool, draft: bool) -> None:
 
     # Hygiène du diff — jamais négociable, même en --draft : un brouillon reste une PR,
     # pas une excuse pour un diff hors périmètre, irrelisable ou porteur de données.
-    hard = checks.diff_hygiene(cwd, base, role, config.max_diff_lines, config.sensitive)
+    hard = checks.diff_hygiene(
+        cwd, base, role, config.max_diff_lines, config.sensitive, config.size_exclude
+    )
     # Complétude fonctionnelle — bloquante normalement, mais c'est précisément ce
     # qu'un --draft sert à montrer incomplet : « voici où j'en suis, voici ce qui
     # bloque ». La rendre bloquante aussi en --draft rendrait l'option inutilisable.
@@ -381,6 +383,8 @@ _DEFAULT_CONFIG = r"""# Configuration crank — voir `crank --help`
 [crank]
 wip_max = 4              # dimensionné pour qu'UNE session vide la file
 max_diff_lines = 300     # une PR relisible, ou pas de PR
+# Fichiers générés, hors plafond (toujours soumis au périmètre et à [sensitive]) :
+size_exclude = ["*.lock", "package-lock.json", ".crank/runs/**"]
 main_branch = "main"
 
 [checks]

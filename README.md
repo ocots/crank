@@ -76,7 +76,9 @@ Ce ne sont pas des consignes dans un prompt : ce sont des vérifications qui ref
 - **`wip_max`** — plafond de PRs ouvertes. Atteint, le scheduler s'arrête et te le dit.
   Dimensionné pour qu'**une session de relecture vide la file**. Il ne limite que
   l'ouverture de *nouvelles* PRs : P0 et P1 passent outre.
-- **`max_diff_lines`** — une PR relisible, ou pas de PR.
+- **`max_diff_lines`** — une PR relisible, ou pas de PR. Il porte sur ce qui se relit :
+  les fichiers générés déclarés dans `size_exclude` (lockfiles, suivi de la tâche) ne
+  comptent pas, mais restent affichés, et soumis au périmètre comme aux données sensibles.
 - **périmètre par rôle** — le diff doit rester dans les chemins déclarés. En particulier,
   le rôle `test` **ne peut pas toucher au code de production** : sans ça, un agent « fait
   passer le test » en modifiant le code testé.
