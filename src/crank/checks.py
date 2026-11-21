@@ -29,7 +29,7 @@ class CheckResult:
 
 def _git(args: list[str], cwd: Path) -> str:
     return subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, check=True
+        ["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True
     ).stdout
 
 
@@ -260,7 +260,7 @@ def diff_hygiene(
 
 
 def run_command(name: str, command: str, cwd: Path) -> CheckResult:
-    proc = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True)
+    proc = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode == 0:
         return CheckResult(name, True)
     tail = (proc.stdout + proc.stderr).strip().splitlines()[-6:]

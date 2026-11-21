@@ -13,7 +13,7 @@ class GitError(RuntimeError):
 
 
 def run(args: list[str], cwd: Path, check: bool = True) -> str:
-    proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    proc = subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and proc.returncode != 0:
         raise GitError(f"{' '.join(args[:4])} : {proc.stderr.strip() or proc.stdout.strip()}")
     return proc.stdout.strip()
@@ -51,7 +51,7 @@ def remove_worktree(root: Path, path: Path) -> None:
 
 
 def gh(args: list[str], cwd: Path, check: bool = True) -> str:
-    proc = subprocess.run(["gh", *args], cwd=cwd, capture_output=True, text=True)
+    proc = subprocess.run(["gh", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and proc.returncode != 0:
         raise GitError(f"gh {' '.join(args[:3])} : {proc.stderr.strip()}")
     return proc.stdout.strip()
