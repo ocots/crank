@@ -26,6 +26,19 @@ class TestSizeExclude:
         assert "*.lock" in load_config(write(tmp_path, _DEFAULT_CONFIG)).size_exclude
 
 
+class TestDeletionWeight:
+    def test_un_par_defaut(self, tmp_path):
+        assert load_config(write(tmp_path, "[crank]\n")).deletion_weight == 1
+
+    def test_lu(self, tmp_path):
+        assert load_config(write(tmp_path, "[crank]\ndeletion_weight = 0.5\n")).deletion_weight == 0.5
+
+    @pytest.mark.parametrize("valeur", ["1.5", "-0.1", '"0.5"', "true"])
+    def test_refuse_hors_de_0_1(self, tmp_path, valeur):
+        with pytest.raises(ValueError, match="deletion_weight"):
+            load_config(write(tmp_path, f"[crank]\ndeletion_weight = {valeur}\n"))
+
+
 class TestSensitive:
     def test_absente_par_defaut(self, tmp_path):
         rules = load_config(write(tmp_path, "[crank]\n")).sensitive

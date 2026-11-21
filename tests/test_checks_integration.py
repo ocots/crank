@@ -257,3 +257,30 @@ class TestTailleHorsFichiersGeneres:
         hard = diff_hygiene(repo, "base", Role("feature", Tier.P2, ()), 300, RULES, ("*.lock",))
         sensitive = next(r for r in hard if r.name == "données sensibles")
         assert not sensitive.ok
+
+
+class TestPoidsDesSuppressions:
+    """Retirer du code se relit plus vite qu'en écrire."""
+
+    @pytest.fixture
+    def nettoyage(self, repo):
+        (repo / "src" / "vieux.py").write_text("\n".join(f"v{i} = {i}" for i in range(400)) + "\n")
+        commit(repo, "vieux code")
+        git(repo, "branch", "-f", "base")
+        (repo / "src" / "vieux.py").unlink()
+        (repo / "src" / "neuf.py").write_text("\n".join(f"x{i} = {i}" for i in range(50)) + "\n")
+        commit(repo, "nettoyage")
+        return repo
+
+    def test_poids_un_par_defaut(self, nettoyage):
+        result = check_size(nettoyage, "base", 300)
+        assert not result.ok and result.detail.startswith("450 lignes")
+
+    def test_demi_poids(self, nettoyage):
+        result = check_size(nettoyage, "base", 300, (), 0.5)
+        assert result.ok and result.detail.startswith("250 lignes")
+        assert "dont 400 suppressions comptées à 50 %" in result.detail
+
+    def test_le_poids_passe_par_diff_hygiene(self, nettoyage):
+        hard = diff_hygiene(nettoyage, "base", FEATURE, 300, SensitiveRules(), (), 0.5)
+        assert all(r.ok for r in hard)

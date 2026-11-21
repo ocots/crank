@@ -7,6 +7,7 @@ sort du périmètre de son rôle est refusée, pas signalée.
 from __future__ import annotations
 
 import ast
+import math
 import re
 import subprocess
 from dataclasses import dataclass
@@ -37,17 +38,23 @@ def changed_files(cwd: Path, base: str) -> tuple[str, ...]:
     return tuple(line for line in out.splitlines() if line.strip())
 
 
-def diff_size_by_file(cwd: Path, base: str) -> dict[str, int]:
-    """Lignes ajoutées + supprimées, par fichier. Un fichier binaire compte pour 0."""
+def diff_stat_by_file(cwd: Path, base: str) -> dict[str, tuple[int, int]]:
+    """(lignes ajoutées, lignes supprimées), par fichier. Un fichier binaire compte pour 0."""
     out = _git(
         ["-c", "core.quotePath=false", "diff", "--numstat", "--no-renames", f"{base}...HEAD"], cwd
     )
-    sizes: dict[str, int] = {}
+    stats: dict[str, tuple[int, int]] = {}
     for line in out.splitlines():
         parts = line.split("\t")
         if len(parts) >= 3:
-            sizes[parts[2]] = sum(int(n) for n in parts[:2] if n.isdigit())
-    return sizes
+            added, deleted = (int(n) if n.isdigit() else 0 for n in parts[:2])
+            stats[parts[2]] = (added, deleted)
+    return stats
+
+
+def diff_size_by_file(cwd: Path, base: str) -> dict[str, int]:
+    """Lignes ajoutées + supprimées, par fichier."""
+    return {path: a + d for path, (a, d) in diff_stat_by_file(cwd, base).items()}
 
 
 def diff_size(cwd: Path, base: str) -> int:
@@ -78,20 +85,30 @@ def check_scope(cwd: Path, base: str, role: Role) -> CheckResult:
 
 
 def check_size(
-    cwd: Path, base: str, max_lines: int, exclude: tuple[str, ...] = ()
+    cwd: Path,
+    base: str,
+    max_lines: int,
+    exclude: tuple[str, ...] = (),
+    deletion_weight: float = 1.0,
 ) -> CheckResult:
     """Le plafond porte sur ce qui se relit. Les fichiers de `exclude` (générés : lockfiles,
     suivi de tâche) ne comptent pas — mais l'exclusion reste affichée, pour rester visible.
+    Une ligne supprimée se relit plus vite qu'une ligne ajoutée : elle compte pour
+    `deletion_weight`, affiché lui aussi quand il n'est pas 1.
     """
-    counted = 0
+    added = deleted = 0
     excluded: dict[str, int] = {}
-    for path, lines in diff_size_by_file(cwd, base).items():
+    for path, (a, d) in diff_stat_by_file(cwd, base).items():
         if path_allowed(path, exclude):
-            excluded[path] = lines
+            excluded[path] = a + d
         else:
-            counted += lines
+            added += a
+            deleted += d
+    counted = added + math.ceil(deleted * deletion_weight)
     ok = counted <= max_lines
     detail = f"{counted} lignes (plafond {max_lines})"
+    if deletion_weight != 1 and deleted:
+        detail += f", dont {deleted} suppressions comptées à {deletion_weight * 100:g} %"
     if excluded:
         detail += ", hors " + ", ".join(f"{p} : {n}" for p, n in sorted(excluded.items()))
     if not ok:
@@ -227,6 +244,7 @@ def diff_hygiene(
     max_lines: int,
     rules: SensitiveRules,
     size_exclude: tuple[str, ...] = (),
+    deletion_weight: float = 1.0,
 ) -> list[CheckResult]:
     """Les vérifications que rien ne contourne, pas même `--draft`.
 
@@ -235,7 +253,7 @@ def diff_hygiene(
     """
     return [
         check_scope(cwd, base, role),
-        check_size(cwd, base, max_lines, size_exclude),
+        check_size(cwd, base, max_lines, size_exclude, deletion_weight),
         check_docstrings_only(cwd, base, role),
         check_sensitive(cwd, base, rules),
     ]
