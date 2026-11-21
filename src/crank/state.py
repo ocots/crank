@@ -146,10 +146,32 @@ def collect_decisions(root: Path, config: Config) -> tuple[Decision, ...]:
     return tuple(decisions)
 
 
+def collect_closed_issues(root: Path, numbers: set[int]) -> frozenset[int]:
+    """Parmi `numbers`, les issues fermées.
+
+    On n'interroge que les issues référencées par un `bloque_sur` et absentes des
+    issues ouvertes — en pratique une ou deux, pas tout l'historique du dépôt. Une
+    issue que `gh` ne trouve pas n'est pas fermée : elle reste bloquante.
+    """
+    closed: set[int] = set()
+    for number in sorted(numbers):
+        try:
+            raw = _run_json(["gh", "issue", "view", str(number), "--json", "state"], root)
+        except StateError:
+            continue
+        if isinstance(raw, dict) and raw.get("state") == "CLOSED":
+            closed.add(number)
+    return frozenset(closed)
+
+
 def collect(root: Path, config: Config) -> RepoState:
+    tasks = collect_tasks(root)
+    open_numbers = {t.number for t in tasks}
+    referenced = {n for t in tasks if t.spec for n in t.spec.task_refs}
     return RepoState(
         ci_main_ok=collect_ci(root, config.main_branch),
-        tasks=collect_tasks(root),
+        tasks=tasks,
         prs=collect_prs(root),
         decisions=collect_decisions(root, config),
+        closed_issues=collect_closed_issues(root, referenced - open_numbers),
     )

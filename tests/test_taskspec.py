@@ -69,3 +69,40 @@ def test_try_parse_ne_leve_pas():
 
 def test_bloc_insensible_a_la_casse():
     assert parse_spec("```CRANK\nrole: test\ndone: pytest\n```").role == "test"
+
+
+class TestBloqueSur:
+    """`bloque_sur` mêle décisions (`"0007"`) et tâches (`"#12"`)."""
+
+    def test_decisions_et_taches_separees(self):
+        spec = parse_spec('```crank\nrole: f\ndone: x\nbloque_sur: ["0007", "#12"]\n```')
+        assert spec.bloque_sur == ("0007", "#12")
+        assert spec.decision_refs == ("0007",)
+        assert spec.task_refs == (12,)
+
+    def test_tache_en_liste_yaml(self):
+        spec = parse_spec('```crank\nrole: f\ndone: x\nbloque_sur:\n  - "#3"\n```')
+        assert spec.task_refs == (3,)
+
+    def test_reference_de_tache_mal_formee(self):
+        with pytest.raises(SpecError) as exc:
+            parse_spec('```crank\nrole: f\ndone: x\nbloque_sur: ["#abc"]\n```')
+        assert "#<numéro>" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "ligne",
+        [
+            "bloque_sur: #12",          # la clé devient vide
+            "bloque_sur:\n  - #12",     # l'élément devient vide
+        ],
+    )
+    def test_diese_sans_guillemets_explique(self, ligne):
+        """Sans guillemets, YAML lit `#12` comme un commentaire : la dépendance
+        disparaîtrait sans bruit. Le message doit dire quoi faire."""
+        with pytest.raises(SpecError) as exc:
+            parse_spec(f"```crank\nrole: f\ndone: x\n{ligne}\n```")
+        assert "guillemets" in str(exc.value)
+
+    def test_diese_sans_guillemets_en_liste_entre_crochets(self):
+        with pytest.raises(SpecError):
+            parse_spec("```crank\nrole: f\ndone: x\nbloque_sur: [#12]\n```")

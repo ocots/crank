@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -18,6 +19,14 @@ DECISION_ACTEE = "actée"
 DECISION_PROPOSEE = "proposée"
 DECISION_REJETEE = "rejetée"
 
+_TASK_REF = re.compile(r"^#(\d+)$")
+
+
+def task_ref_number(ref: str) -> int | None:
+    """`"#12"` → 12 ; toute autre référence (une décision) → None."""
+    match = _TASK_REF.match(ref)
+    return int(match.group(1)) if match else None
+
 
 @dataclass(frozen=True)
 class TaskSpec:
@@ -28,6 +37,15 @@ class TaskSpec:
     touche: tuple[str, ...] = ()
     bloque_sur: tuple[str, ...] = ()
     budget: str = ""
+
+    @property
+    def decision_refs(self) -> tuple[str, ...]:
+        return tuple(r for r in self.bloque_sur if task_ref_number(r) is None)
+
+    @property
+    def task_refs(self) -> tuple[int, ...]:
+        """Les tâches (issues) dont celle-ci dépend : `bloque_sur: ["#12"]`."""
+        return tuple(n for r in self.bloque_sur if (n := task_ref_number(r)) is not None)
 
 
 @dataclass(frozen=True)
@@ -112,11 +130,20 @@ class RepoState:
     tasks: tuple[Task, ...] = ()
     prs: tuple[PullRequest, ...] = ()
     decisions: tuple[Decision, ...] = ()
+    # Issues fermées parmi celles que référence un `bloque_sur`. Une issue ouverte est
+    # dans `tasks` ; une issue ni ouverte ni fermée est inconnue, et bloque.
+    closed_issues: frozenset[int] = frozenset()
 
     def decision(self, ref: str) -> Decision | None:
         for d in self.decisions:
             if d.ref == ref:
                 return d
+        return None
+
+    def task(self, number: int) -> Task | None:
+        for t in self.tasks:
+            if t.number == number:
+                return t
         return None
 
     @property

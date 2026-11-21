@@ -18,7 +18,7 @@ from crank.models import (
     Decision,
     Tier,
 )
-from crank.scheduler import paths_overlap, plan, task_blocker
+from crank.scheduler import paths_overlap, plan, task_blocker, waiting_on
 
 
 class TestDeterminisme:
@@ -177,6 +177,119 @@ class TestDecisionsBloquantes:
             decisions=(Decision("0007", "x", DECISION_PROPOSEE),),
         )
         assert any("famine" in n for n in plan(state, config).notes)
+
+
+class TestDependancesEntreTaches:
+    """`bloque_sur: ["#1"]` : une tâche qui a besoin du code d'une autre attend sa fusion.
+
+    Le recouvrement de périmètres ne suffit pas : il ne protège que tant que l'autre
+    tâche est réclamée. Dès sa PR ouverte, elle ne l'est plus, et la suivante partirait
+    d'un `main` qui ne contient pas encore ce dont elle a besoin.
+    """
+
+    def test_bloquee_tant_que_la_tache_est_ouverte(self, config):
+        state = make_state(
+            tasks=(
+                make_task(1, labels=(CLAIM_LABEL,), touche=("src/a/**",)),
+                make_task(2, bloque_sur=("#1",), touche=("src/b/**",)),
+            )
+        )
+        p = plan(state, config)
+        assert p.action is Action.STOP
+        assert (2, "bloquée sur tâche #1") in p.skipped
+
+    def test_bloquee_meme_quand_sa_pr_est_ouverte(self, config):
+        """Le cas qui motive la fonctionnalité : la tâche 1 n'est plus réclamée."""
+        state = make_state(
+            tasks=(
+                make_task(1, touche=("src/a/**",), labels=("blocked",)),
+                make_task(2, bloque_sur=("#1",), touche=("src/b/**",)),
+            ),
+            prs=(make_pr(1),),
+        )
+        assert plan(state, config).action is Action.STOP
+
+    def test_debloquee_quand_la_tache_est_fermee(self, config):
+        state = make_state(
+            tasks=(make_task(2, bloque_sur=("#1",)),),
+            closed=(1,),
+        )
+        p = plan(state, config)
+        assert p.action is Action.WORK_TASK and p.task.number == 2
+
+    def test_reference_inconnue_bloque(self, config):
+        state = make_state(tasks=(make_task(2, bloque_sur=("#99",)),))
+        p = plan(state, config)
+        assert p.action is Action.STOP
+        assert (2, "bloquée sur tâche #99 (introuvable)") in p.skipped
+
+    def test_decision_et_tache_melees(self, config):
+        decision = Decision("0007", "format", DECISION_PROPOSEE)
+        task = make_task(2, bloque_sur=("0007", "#1"), touche=("src/b/**",))
+        state = make_state(tasks=(make_task(1), task), decisions=(decision,))
+        assert task_blocker(task, state, config) == "bloquée sur décision 0007 ; tâche #1"
+
+    def test_decision_tranchee_mais_tache_ouverte(self, config):
+        state = make_state(
+            tasks=(
+                make_task(1, labels=(CLAIM_LABEL,), touche=("src/a/**",)),
+                make_task(2, bloque_sur=("0007", "#1"), touche=("src/b/**",)),
+            ),
+            decisions=(Decision("0007", "format", DECISION_ACTEE),),
+        )
+        assert plan(state, config).action is Action.STOP
+
+    def test_les_deux_levees(self, config):
+        state = make_state(
+            tasks=(make_task(2, bloque_sur=("0007", "#1")),),
+            decisions=(Decision("0007", "format", DECISION_ACTEE),),
+            closed=(1,),
+        )
+        assert plan(state, config).task.number == 2
+
+    def test_la_chaine_avance_maillon_par_maillon(self, config):
+        """1 → 2 → 3 : seule la première est éligible."""
+        state = make_state(
+            tasks=(
+                make_task(1, touche=("src/a/**",)),
+                make_task(2, bloque_sur=("#1",), touche=("src/b/**",)),
+                make_task(3, bloque_sur=("#2",), touche=("src/c/**",)),
+            )
+        )
+        p = plan(state, config)
+        assert p.task.number == 1
+        assert {n for n, _ in p.skipped} == {2, 3}
+
+    def test_attendre_une_tache_nest_pas_une_famine(self, config):
+        """La famine signale ce qui attend l'humain : les décisions, pas le travail."""
+        state = make_state(
+            tasks=(
+                make_task(1, labels=(CLAIM_LABEL,), touche=("src/a/**",)),
+                make_task(2, bloque_sur=("#1",), touche=("src/b/**",)),
+                make_task(3, bloque_sur=("#1",), touche=("src/c/**",)),
+            )
+        )
+        assert not any("famine" in n for n in plan(state, config).notes)
+
+
+class TestAttentes:
+    def test_qui_attend_qui(self):
+        state = make_state(
+            tasks=(
+                make_task(1),
+                make_task(2, bloque_sur=("#1",)),
+                make_task(3, bloque_sur=("#1", "#2")),
+            )
+        )
+        assert waiting_on(state) == {1: (2, 3), 2: (3,)}
+
+    def test_une_tache_fermee_nest_plus_attendue(self):
+        state = make_state(tasks=(make_task(2, bloque_sur=("#1",)),), closed=(1,))
+        assert waiting_on(state) == {}
+
+    def test_les_decisions_ne_comptent_pas(self):
+        state = make_state(tasks=(make_task(2, bloque_sur=("0007",)),))
+        assert waiting_on(state) == {}
 
 
 class TestConflitsDePerimetre:
