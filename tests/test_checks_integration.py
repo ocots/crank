@@ -206,3 +206,54 @@ class TestDonneesSensibles:
         hard = diff_hygiene(repo, "base", Role("feature", Tier.P2, ()), 300, RULES)
         bloque, _ = finalize_gate(hard, [CheckResult("done", False)], draft=True)
         assert bloque
+
+
+LOCK = ("*.lock", ".crank/runs/**")
+
+
+class TestTailleHorsFichiersGeneres:
+    """Le plafond porte sur ce qui se relit, pas sur un lockfile."""
+
+    @pytest.fixture
+    def gros_lock(self, repo):
+        (repo / "uv.lock").write_text("\n".join(f"l{i}" for i in range(400)) + "\n")
+        (repo / "src" / "neuf.py").write_text("\n".join(f"x{i} = {i}" for i in range(50)) + "\n")
+        commit(repo, "dépendance")
+        return repo
+
+    def test_echoue_sans_exclusion(self, gros_lock):
+        assert not check_size(gros_lock, "base", 300).ok
+
+    def test_passe_avec_exclusion(self, gros_lock):
+        result = check_size(gros_lock, "base", 300, LOCK)
+        assert result.ok
+        assert result.detail.startswith("50 lignes")
+
+    def test_lexclusion_reste_visible(self, gros_lock):
+        assert "hors uv.lock : 400" in check_size(gros_lock, "base", 300, LOCK).detail
+
+    def test_le_code_seul_peut_encore_depasser(self, repo):
+        (repo / "uv.lock").write_text("x\n")
+        (repo / "src" / "gros.py").write_text("\n".join(f"x{i} = {i}" for i in range(400)) + "\n")
+        commit(repo, "gros")
+        result = check_size(repo, "base", 300, LOCK)
+        assert not result.ok and "découpe" in result.detail
+
+    def test_suivi_de_tache_exclu(self, repo):
+        (repo / ".crank" / "runs").mkdir(parents=True)
+        (repo / ".crank" / "runs" / "0001-x.md").write_text("\n".join("ligne" for _ in range(400)) + "\n")
+        commit(repo, "suivi")
+        assert check_size(repo, "base", 300, LOCK).ok
+
+    def test_exclu_de_la_taille_mais_pas_du_perimetre(self, gros_lock):
+        """`size_exclude` ne sert qu'à compter : il n'ouvre aucun chemin."""
+        hard = diff_hygiene(gros_lock, "base", FEATURE, 300, SensitiveRules(), LOCK)
+        scope = next(r for r in hard if r.name.startswith("périmètre"))
+        assert not scope.ok and "uv.lock" in scope.detail
+
+    def test_exclu_de_la_taille_mais_pas_des_donnees_sensibles(self, repo):
+        (repo / "releve.lock").write_text(f"{IBAN}\n")
+        commit(repo, "égaré")
+        hard = diff_hygiene(repo, "base", Role("feature", Tier.P2, ()), 300, RULES, ("*.lock",))
+        sensitive = next(r for r in hard if r.name == "données sensibles")
+        assert not sensitive.ok

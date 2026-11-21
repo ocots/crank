@@ -12,6 +12,20 @@ def write(tmp_path: Path, text: str) -> Path:
     return tmp_path
 
 
+class TestSizeExclude:
+    def test_vide_par_defaut(self, tmp_path):
+        assert load_config(write(tmp_path, "[crank]\n")).size_exclude == ()
+
+    def test_lue(self, tmp_path):
+        config = load_config(write(tmp_path, '[crank]\nsize_exclude = ["uv.lock"]\n'))
+        assert config.size_exclude == ("uv.lock",)
+
+    def test_proposee_par_crank_init(self, tmp_path):
+        from crank.cli import _DEFAULT_CONFIG
+
+        assert "*.lock" in load_config(write(tmp_path, _DEFAULT_CONFIG)).size_exclude
+
+
 class TestSensitive:
     def test_absente_par_defaut(self, tmp_path):
         rules = load_config(write(tmp_path, "[crank]\n")).sensitive
