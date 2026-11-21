@@ -141,7 +141,10 @@ def setup(number: int) -> None:
     except git_ops.GitError as exc:
         git_ops.remove_worktree(root, path)
         raise click.ClickException(f"réclamation impossible, worktree retiré : {exc}")
-    taskfile.write(path, task)
+    try:
+        taskfile.write(path, task)
+    except taskfile.TaskFileError as exc:
+        raise click.ClickException(str(exc))
 
     click.echo(click.style(f"✓ worktree prêt pour #{number}", fg="green"))
     click.echo(f"  chemin : {path}")
@@ -194,7 +197,10 @@ def finalize(dry_run: bool, draft: bool) -> None:
     task = next((t for t in state.collect_tasks(root) if t.number == number), None)
     if task is None or task.spec is None:
         raise click.ClickException(f"issue #{number} introuvable ou sans spec")
-    tf = taskfile.read(cwd, task)
+    try:
+        tf = taskfile.read(cwd, task)
+    except taskfile.TaskFileError as exc:
+        raise click.ClickException(str(exc))
     role = config.role(task.spec.role)
     if role is None:
         raise click.ClickException(f"rôle « {task.spec.role} » inconnu")

@@ -11,7 +11,10 @@ class TestSlugify:
         [
             ("Locate — homographie robuste", "locate-homographie-robuste"),
             ("  Espaces  multiples  ", "espaces-multiples"),
-            ("Déjà accentué !", "d-j-accentu"),
+            ("Déjà accentué !", "deja-accentue"),
+            ("Règlement mensuel", "reglement-mensuel"),
+            ("Le cœur de l'été", "le-coeur-de-l-ete"),
+            ("Ça marche, Œuvre", "ca-marche-oeuvre"),
             ("", "tache"),
             ("///", "tache"),
         ],
