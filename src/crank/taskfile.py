@@ -85,15 +85,32 @@ class TaskFile:
             "",
             "---",
             f"Critère de complétion vérifié : `{done}`",
-            f"Suivi : `{RUNS_DIR}/{run_filename(task.number, task.title)}`",
+            f"Suivi : `{RUNS_DIR}/{self.path.name}`",
             "",
             "_Généré par `crank finalize`._",
         ]
         return "\n".join(parts)
 
 
+class TaskFileError(RuntimeError):
+    pass
+
+
 def path_for(worktree: Path, task: Task) -> Path:
-    return worktree / RUNS_DIR / run_filename(task.number, task.title)
+    """Le suivi de la tâche, retrouvé par son **numéro**.
+
+    Le nom contient le slug du titre, mais une issue se renomme — en particulier quand
+    on la découpe parce que son diff dépasse le plafond. Le numéro, lui, ne change pas.
+    """
+    folder = worktree / RUNS_DIR
+    expected = folder / run_filename(task.number, task.title)
+    if expected.is_file():
+        return expected
+    found = sorted(folder.glob(f"{task.number:04d}-*.md")) if folder.is_dir() else []
+    if len(found) > 1:
+        names = ", ".join(p.name for p in found)
+        raise TaskFileError(f"plusieurs suivis pour #{task.number} : {names} — n'en garder qu'un")
+    return found[0] if found else expected
 
 
 def render(task: Task) -> str:
@@ -120,8 +137,8 @@ def write(worktree: Path, task: Task) -> Path:
 def read(worktree: Path, task: Task) -> TaskFile:
     path = path_for(worktree, task)
     if not path.is_file():
-        raise FileNotFoundError(
-            f"suivi introuvable : {RUNS_DIR}/{run_filename(task.number, task.title)}"
+        raise TaskFileError(
+            f"suivi introuvable : aucun {RUNS_DIR}/{task.number:04d}-*.md"
             " — `crank setup` l'aurait créé"
         )
     return TaskFile(path=path, text=path.read_text(encoding="utf-8"))

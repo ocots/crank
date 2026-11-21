@@ -27,12 +27,16 @@ cd /chemin/vers/ton/depot
 crank init            # .crank.toml, decisions/, labels GitHub
 
 crank next            # que faut-il faire maintenant ? (sans effet de bord)
-crank setup 42        # worktree + branche + réclamation + .task.md
+crank setup 42        # worktree + branche + réclamation + suivi .crank/runs/0042-….md
 #   … l'agent travaille dans le worktree …
 crank finalize        # vérifications, puis PR — refuse si une vérification échoue
 
 crank status          # l'ordre de ta session de relecture
 ```
+
+Le fichier de suivi est la mémoire de l'agent, puis la description de la PR. Il est
+retrouvé par son **numéro** : renommer l'issue en cours de route (pour la découper, par
+exemple) ne le perd pas.
 
 ## Définir une tâche
 

@@ -7,10 +7,18 @@ toujours le même slug, calculé une seule fois.
 from __future__ import annotations
 
 import re
+import unicodedata
+
+# NFKD ne décompose pas les ligatures : on les écrit en toutes lettres d'abord.
+_LIGATURES = str.maketrans({"œ": "oe", "Œ": "OE", "æ": "ae", "Æ": "AE", "ß": "ss"})
 
 
 def slugify(text: str, limit: int = 40) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    """« Règlement du cœur » → `reglement-du-coeur` : les accents sont translittérés,
+    pas remplacés par des tirets."""
+    decomposed = unicodedata.normalize("NFKD", text.translate(_LIGATURES))
+    plain = "".join(c for c in decomposed if not unicodedata.combining(c))
+    slug = re.sub(r"[^a-z0-9]+", "-", plain.lower()).strip("-")
     return slug[:limit].rstrip("-") or "tache"
 
 
