@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -78,6 +79,31 @@ def mark_failed(cwd: Path, number: int, claim_label: str, failed_label: str, rea
 def ensure_labels(cwd: Path, labels: dict[str, str]) -> None:
     for name, color in labels.items():
         gh(["label", "create", name, "--color", color, "--force"], cwd, check=False)
+
+
+def existing_pr(cwd: Path, branch: str) -> tuple[str, str] | None:
+    """(url, état) de la PR la plus récente pour cette branche, ou rien."""
+    raw = gh(["pr", "list", "--head", branch, "--state", "all", "--limit", "1", "--json", "url,state"], cwd)
+    prs = json.loads(raw or "[]")
+    return (prs[0]["url"], prs[0]["state"]) if prs else None
+
+
+def open_or_update_pr(
+    cwd: Path, branch: str, title: str, body: str, base: str, draft: bool = False
+) -> tuple[str, bool]:
+    """Ouvre la PR de la branche, ou met à jour celle qui est déjà ouverte.
+
+    Renvoie (url, créée). Le titre et le corps sont toujours régénérés : un corps
+    retouché à la main qui aurait perdu son `Closes #N` le retrouve.
+    """
+    existante = existing_pr(cwd, branch)
+    if existante is None:
+        return open_pr(cwd, title, body, base, draft), True
+    url, etat = existante
+    if etat != "OPEN":
+        raise GitError(f"la PR de la branche {branch} est {etat.lower()} : {url} — nouvelle branche nécessaire")
+    gh(["pr", "edit", url, "--title", title, "--body", body], cwd)
+    return url, False
 
 
 def open_pr(cwd: Path, title: str, body: str, base: str, draft: bool = False) -> str:

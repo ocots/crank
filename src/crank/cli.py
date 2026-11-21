@@ -254,19 +254,23 @@ def finalize(dry_run: bool, draft: bool) -> None:
         raise click.ClickException("modifications non committées — commit d'abord")
     git_ops.run(["git", "push", "-u", "origin", branch], cwd)
 
-    url = git_ops.open_pr(
-        cwd,
-        title=f"{task.title} (#{number})",
-        body=tf.pr_body(task),
-        base=config.main_branch,
-        draft=draft,
-    )
+    try:
+        url, creee = git_ops.open_or_update_pr(
+            cwd,
+            branch,
+            title=f"{task.title} (#{number})",
+            body=tf.pr_body(task),
+            base=config.main_branch,
+            draft=draft,
+        )
+    except git_ops.GitError as exc:
+        raise click.ClickException(str(exc))
     git_ops.release_issue(root, number, CLAIM_LABEL)
     if not draft:
         git_ops.gh(["pr", "edit", url, "--add-label", REVIEW_LABEL], cwd, check=False)
 
     click.echo()
-    click.echo(click.style(f"✓ PR ouverte : {url}", fg="green"))
+    click.echo(click.style(f"✓ PR {'ouverte' if creee else 'mise à jour'} : {url}", fg="green"))
 
 
 @app.command()
