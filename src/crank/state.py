@@ -164,6 +164,18 @@ def collect_closed_issues(root: Path, numbers: set[int]) -> frozenset[int]:
     return frozenset(closed)
 
 
+def collect_merged_open(root: Path, open_numbers: set[int]) -> tuple[tuple[int, int], ...]:
+    """Les PR fusionnées de branches `task/<n>-…` dont l'issue `n` est encore ouverte."""
+    raw = _run_json(
+        ["gh", "pr", "list", "--state", "merged", "--limit", "100", "--json", "number,headRefName"], root
+    )
+    found: dict[int, int] = {}
+    for item in raw:
+        if (m := _BRANCH_TASK.search(item.get("headRefName", ""))) and int(m.group(1)) in open_numbers:
+            found.setdefault(int(m.group(1)), item["number"])
+    return tuple(sorted(found.items()))
+
+
 def collect(root: Path, config: Config) -> RepoState:
     tasks = collect_tasks(root)
     open_numbers = {t.number for t in tasks}
@@ -174,4 +186,5 @@ def collect(root: Path, config: Config) -> RepoState:
         prs=collect_prs(root),
         decisions=collect_decisions(root, config),
         closed_issues=collect_closed_issues(root, referenced - open_numbers),
+        merged_open=collect_merged_open(root, open_numbers),
     )
