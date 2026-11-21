@@ -21,6 +21,7 @@ from .models import (
     Task,
     Tier,
 )
+from .taskfile import RUNS_DIR
 
 _TIER_ORDER = {Tier.P0: 0, Tier.P1: 1, Tier.P2: 2, Tier.P3: 3, Tier.P4: 4, Tier.P5: 5}
 
@@ -29,12 +30,18 @@ def _normalise(pattern: str) -> str:
     return pattern.rstrip("/")
 
 
+
+def _hors_suivi(patterns: tuple[str, ...]) -> tuple[str, ...]:
+    """Sans les fichiers de suivi : chaque tâche n'écrit que le sien, jamais de conflit."""
+    return tuple(p for p in patterns if not _normalise(p).startswith(RUNS_DIR))
+
+
 def paths_overlap(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
     """Deux périmètres se recouvrent-ils ? Conservateur : sans périmètre, on suppose oui."""
     if not a or not b:
         return True
-    for pa in a:
-        for pb in b:
+    for pa in _hors_suivi(a):
+        for pb in _hors_suivi(b):
             na, nb = _normalise(pa), _normalise(pb)
             if na == nb or fnmatch(na, nb) or fnmatch(nb, na):
                 return True

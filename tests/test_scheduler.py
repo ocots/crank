@@ -336,6 +336,13 @@ class TestPathsOverlap:
     def test_vide_est_conservateur(self):
         assert paths_overlap((), ("docs/**",))
 
+    def test_fichiers_de_suivi_jamais_en_conflit(self):
+        assert not paths_overlap(("src/a.py", ".crank/runs/**"), ("src/b.py", ".crank/runs/**"))
+        assert not paths_overlap((".crank/runs/**",), ("src/**",))
+
+    def test_vrai_conflit_a_cote_du_suivi(self):
+        assert paths_overlap(("src/a.py", ".crank/runs/**"), ("src/**", ".crank/runs/**"))
+
 
 class TestRapportDArret:
     def test_rien_a_faire_reste_informatif(self, config):
